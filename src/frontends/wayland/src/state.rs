@@ -43,7 +43,7 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::{
     zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
 };
 
-use crate::{PressState, RepeatInfo};
+use crate::{PressState, RepeatInfo, DEFAULT_REPEAT_INFO};
 
 use xkbcommon::xkb::{
     Context as XkbContext, Keycode, Keymap, CONTEXT_NO_FLAGS, KEYMAP_COMPILE_NO_FLAGS,
@@ -119,13 +119,7 @@ impl AppState {
             serial: 0,
             timer,
             // For v1, provide default repeat info since older protocols might not provide it
-            repeat_state: Some((
-                RepeatInfo {
-                    rate: 20,
-                    delay: 400,
-                },
-                PressState::NotPressing,
-            )),
+            repeat_state: Some((DEFAULT_REPEAT_INFO, PressState::NotPressing)),
             last_preedit_len: 0,
             should_exit: false,
             globals: Globals {
@@ -165,6 +159,15 @@ impl AppState {
         self.engine.sync_profile(RuntimeProfile::from_u8(
             self.profile.load(Ordering::Relaxed),
         ));
+    }
+
+    fn update_repeat_info(&mut self, rate: i32, delay: i32, fallback_on_zero: bool) {
+        let press_state = self
+            .repeat_state
+            .map(|pair| pair.1)
+            .unwrap_or(PressState::NotPressing);
+        self.repeat_state = RepeatInfo::from_protocol(rate, delay, fallback_on_zero)
+            .map(|info| (info, press_state));
     }
 
     pub fn has_input_method_v2(&self) -> bool {
@@ -762,16 +765,7 @@ impl Dispatch<ZwpInputMethodKeyboardGrabV2, ()> for AppState {
                 }
             }
             zwp_input_method_keyboard_grab_v2::Event::RepeatInfo { rate, delay } => {
-                state.repeat_state = if rate == 0 {
-                    None
-                } else {
-                    let info = RepeatInfo { rate, delay };
-                    let press_state = state
-                        .repeat_state
-                        .map(|pair| pair.1)
-                        .unwrap_or(PressState::NotPressing);
-                    Some((info, press_state))
-                };
+                state.update_repeat_info(rate, delay, false);
             }
             _ => {}
         }
@@ -978,16 +972,13 @@ impl Dispatch<WlKeyboard, ()> for AppState {
                 state.modifiers_v1(mods_depressed, mods_latched, mods_locked, group);
             }
             wl_keyboard::Event::RepeatInfo { rate, delay } => {
-                state.repeat_state = if rate == 0 {
-                    None
-                } else {
-                    let info = RepeatInfo { rate, delay };
-                    let press_state = state
-                        .repeat_state
-                        .map(|pair| pair.1)
-                        .unwrap_or(PressState::NotPressing);
-                    Some((info, press_state))
-                };
+                // KWin sends rate=0 to an input-method-v1 keyboard grab when
+                // the focused client supports compositor-side repetition.
+                // That repetition cannot reach keys consumed by the IME, so
+                // keep a local fallback for Hangul while preserving KWin's
+                // configured delay. Bypassed Latin keys still repeat in the
+                // focused client as before.
+                state.update_repeat_info(rate, delay, true);
             }
             _ => {}
         }
