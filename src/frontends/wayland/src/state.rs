@@ -360,7 +360,7 @@ impl AppState {
 
             // Emit key repeat event
             let elapsed_ms = pressed_at.elapsed().as_millis() as u32;
-            let _time = wayland_time.wrapping_add(elapsed_ms);
+            let time = wayland_time.wrapping_add(elapsed_ms);
 
             // Handle v2
             self.sync_profile();
@@ -371,7 +371,10 @@ impl AppState {
                         let ret = self
                             .engine
                             .press_key(Key::new(code, self.mod_state), &self.config);
-                        self.process_input_result_v2(ret);
+                        let bypassed = self.process_input_result_v2(ret);
+                        if bypassed {
+                            self.repeat_key_v2(time, key);
+                        }
                     }
                 }
             }
@@ -389,7 +392,10 @@ impl AppState {
                     let ret = self
                         .engine
                         .press_key(Key::new(code, self.mod_state), &self.config);
-                    self.process_input_result_v1(ret);
+                    let bypassed = self.process_input_result_v1(ret);
+                    if bypassed {
+                        self.repeat_key_v1(time, key);
+                    }
                 }
             }
         }
@@ -479,6 +485,26 @@ impl AppState {
             if let Some(ref im_ctx) = im_state.im_ctx {
                 im_ctx.key(self.serial, time, key, state as u32);
             }
+        }
+    }
+
+    fn repeat_key_v1(&mut self, time: u32, key: u32) {
+        // wl_keyboard versions before 10 cannot receive the Repeated state.
+        // Chromium/Electron still bind an older version and perform their own
+        // repeat, but an IME-consumed initial press never reaches them. Emit a
+        // balanced pair for each local repeat so every client can handle it.
+        self.key_v1(time, key, KeyState::Pressed);
+        self.key_v1(time, key, KeyState::Released);
+    }
+
+    fn repeat_key_v2(&self, time: u32, key: u32) {
+        if let Some(ref im_state) = self.im_v2 {
+            // virtual-keyboard-v1 only guarantees pressed/released states.
+            // Emit a balanced pair for each client-side repeat so the key can
+            // never remain logically pressed when an IME-consumed key starts
+            // bypassing after its preedit becomes empty.
+            im_state.vk.key(time, key, KeyState::Pressed as u32);
+            im_state.vk.key(time, key, KeyState::Released as u32);
         }
     }
 

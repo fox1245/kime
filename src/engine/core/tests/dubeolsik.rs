@@ -220,6 +220,15 @@ fn backspace() {
 }
 
 #[test]
+fn backspace_bypasses_after_preedit_becomes_empty() {
+    test_input(&[
+        (Key::normal(R), "ㄱ", ""),
+        (Key::normal(Backspace), "", ""),
+        (Key::normal(Backspace), "", "PASS"),
+    ])
+}
+
+#[test]
 fn compose_jong() {
     test_input(&[
         (Key::normal(D), "ㅇ", ""),
