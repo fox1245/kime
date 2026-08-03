@@ -221,11 +221,17 @@ format is `layout_name: [Addon]`, `all` applies all layouts
 #### default
 
 ```yaml
-all:
-  - ComposeChoseongSsang
+all: []
 dubeolsik:
   - TreatJongseongAsChoseongg
+sebeolsik-3-90:
+  - ComposeChoseongSsang
+sebeolsik-3-91:
+  - ComposeChoseongSsang
+sebeolsik-3sin-1995:
+  - ComposeChoseongSsang
 sebeolsik-3sin-p2:
+  - ComposeChoseongSsang
   - ComposeJongseongSsang
 ```
 
@@ -264,6 +270,9 @@ Compose choseong, jungseong, and jongseong even order is reversed it could be he
 ##### ComposeChoseongSsang
 
 When you press same choseong it will be ssangjaum
+
+This addon is disabled by default. Use Shift with the dubeolsik layout for
+ssangjaeum, matching Windows-style Hangul input.
 
 ```txt
 ㄱ + ㄱ = ㄲ

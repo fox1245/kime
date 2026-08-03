@@ -107,9 +107,15 @@ engine:
     word_commit: false
     preedit_johab: Needed
     addons:
-      all:
-      - ComposeChoseongSsang
+      all: []
       dubeolsik:
       - TreatJongseongAsChoseong
+      sebeolsik-3-90:
+      - ComposeChoseongSsang
+      sebeolsik-3-91:
+      - ComposeChoseongSsang
+      sebeolsik-3sin-1995:
+      - ComposeChoseongSsang
       sebeolsik-3sin-p2:
+      - ComposeChoseongSsang
       - ComposeJongseongSsang

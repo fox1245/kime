@@ -17,6 +17,20 @@ fn strict_typing_order() {
 }
 
 #[test]
+fn repeated_choseong_stays_separate_without_shift() {
+    test_input(&[
+        (Key::normal(R), "ㄱ", ""),
+        (Key::normal(R), "ㄱ", "ㄱ"),
+        (Key::normal(Esc), "", "ㄱPASS"),
+    ]);
+}
+
+#[test]
+fn shifted_choseong_is_ssangjaeum() {
+    test_input(&[(Key::shift(R), "ㄲ", ""), (Key::normal(Esc), "", "ㄲPASS")]);
+}
+
+#[test]
 fn treat_jongseong_as_choseong_compose_addon() {
     test_input_with_addon(
         &[

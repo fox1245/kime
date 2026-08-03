@@ -63,11 +63,21 @@ impl Default for HangulConfig {
             word_commit: false,
             preedit_johab: PreeditJohabLevel::default(),
             addons: vec![
-                ("all".into(), Addon::ComposeChoseongSsang.into()),
+                // Windows-style dubeolsik input requires Shift for
+                // ssangjaeum. Keeping this addon out of the global defaults
+                // also prevents key repeat from turning a held consonant into
+                // a double consonant.
+                ("all".into(), EnumSet::new()),
                 ("dubeolsik".into(), Addon::TreatJongseongAsChoseong.into()),
+                ("sebeolsik-3-90".into(), Addon::ComposeChoseongSsang.into()),
+                ("sebeolsik-3-91".into(), Addon::ComposeChoseongSsang.into()),
+                (
+                    "sebeolsik-3sin-1995".into(),
+                    Addon::ComposeChoseongSsang.into(),
+                ),
                 (
                     "sebeolsik-3sin-p2".into(),
-                    Addon::ComposeJongseongSsang.into(),
+                    (Addon::ComposeChoseongSsang | Addon::ComposeJongseongSsang).into(),
                 ),
             ]
             .into_iter()

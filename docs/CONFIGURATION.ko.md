@@ -206,11 +206,17 @@ XIM에서 쓸 편집창 글꼴과 크기입니다.
 #### 기본값
 
 ```yaml
-all:
-  - ComposeChoseongSsang
+all: []
 dubeolsik:
   - TreatJongseongAsChoseong
+sebeolsik-3-90:
+  - ComposeChoseongSsang
+sebeolsik-3-91:
+  - ComposeChoseongSsang
+sebeolsik-3sin-1995:
+  - ComposeChoseongSsang
 sebeolsik-3sin-p2:
+  - ComposeChoseongSsang
   - ComposeJongseongSsang
 ```
 
@@ -249,6 +255,9 @@ sebeolsik-3sin-p2:
 ##### ComposeChoseongSsang
 
 같은 자음을 두 번 누를 때 쌍자음을 합성합니다.
+
+기본값은 비활성화되어 있습니다. 두벌식에서 Shift를 사용해 쌍자음을
+입력하는 Windows 방식과 맞추기 위한 설정입니다.
 
 ```txt
 ㄱ + ㄱ = ㄲ
