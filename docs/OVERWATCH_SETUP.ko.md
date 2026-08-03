@@ -6,7 +6,7 @@
 - 오버워치 실행 중 한/영 전환: 오른쪽 `Alt`
 - 오버워치 프로세스를 감지해 단축키 프로필 자동 전환
 - 두벌식에서 같은 자음을 연속 입력해도 쌍자음으로 합치지 않음
-- 영문과 한글 모두 키를 150ms 누르면 반복 입력 시작
+- 영문과 한글 모두 키를 200ms 누르면 반복 입력 시작
 
 ## 새 Ubuntu에서 설치
 
@@ -25,7 +25,7 @@ cd kime
 3. `~/.config/kime/config.yaml`에 저장된 개인 프로필을 설치합니다.
 4. `~/.config/environment.d/99-kime.conf`에 입력기 환경변수를 설치합니다.
 5. KDE Plasma Wayland의 가상 키보드를 Kime으로 설정합니다.
-6. KDE 전역 키 반복 지연을 150ms로 설정합니다.
+6. KDE 전역 키 반복 지연을 200ms로 설정합니다.
 7. `kime-overwatch-watcher.service`를 활성화합니다.
 8. `restore-overwatch-kime` Codex 스킬을 개인 스킬 폴더에 설치합니다.
 9. 가능한 경우 로그아웃 없이 KWin을 통해 Kime을 다시 시작합니다.

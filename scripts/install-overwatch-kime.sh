@@ -168,13 +168,13 @@ configure_kde_wayland() {
             --type bool true
     fi
 
-    if [[ "$current_repeat_delay" != 150 ]]; then
+    if [[ "$current_repeat_delay" != 200 ]]; then
         if [[ -e "$keyboard_config" ]]; then
             cp -a -- "$keyboard_config" "${keyboard_config}.backup-${backup_stamp}"
             log "backed up $keyboard_config before changing the repeat delay"
         fi
-        kwriteconfig6 --file kcminputrc --group Keyboard --key RepeatDelay 150
-        log "set the global keyboard repeat delay to 150 ms"
+        kwriteconfig6 --file kcminputrc --group Keyboard --key RepeatDelay 200
+        log "set the global keyboard repeat delay to 200 ms"
     fi
 }
 
