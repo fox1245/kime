@@ -144,7 +144,7 @@ meson.add_install_script('sh', '-c',
   '_', meson.project_source_root() / 'res' / 'kime-overwatch-watcher',
 )
 install_data('res/kime-overwatch-watcher.service',
-  install_dir: get_option('libdir') / 'systemd' / 'user',
+  install_dir: get_option('prefix') / 'lib' / 'systemd' / 'user',
 )
 
 # Install icons
