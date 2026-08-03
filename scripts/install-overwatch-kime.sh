@@ -140,8 +140,10 @@ install_codex_skill() {
 
 configure_kde_wayland() {
     local kwin_config="$user_config_root/kwinrc"
+    local keyboard_config="$user_config_root/kcminputrc"
     local current_input_method=
     local current_virtual_keyboard=
+    local current_repeat_delay=
 
     if ! command -v kwriteconfig6 >/dev/null 2>&1; then
         warn "kwriteconfig6 is unavailable; select 'kime daemon' in KDE Virtual Keyboard settings"
@@ -151,6 +153,7 @@ configure_kde_wayland() {
     if command -v kreadconfig6 >/dev/null 2>&1; then
         current_input_method=$(kreadconfig6 --file kwinrc --group Wayland --key InputMethod 2>/dev/null || true)
         current_virtual_keyboard=$(kreadconfig6 --file kwinrc --group Wayland --key VirtualKeyboardEnabled 2>/dev/null || true)
+        current_repeat_delay=$(kreadconfig6 --file kcminputrc --group Keyboard --key RepeatDelay 2>/dev/null || true)
     fi
 
     if [[ "$current_input_method" != /usr/share/applications/kime.desktop ]] \
@@ -163,6 +166,15 @@ configure_kde_wayland() {
             /usr/share/applications/kime.desktop
         kwriteconfig6 --file kwinrc --group Wayland --key VirtualKeyboardEnabled \
             --type bool true
+    fi
+
+    if [[ "$current_repeat_delay" != 150 ]]; then
+        if [[ -e "$keyboard_config" ]]; then
+            cp -a -- "$keyboard_config" "${keyboard_config}.backup-${backup_stamp}"
+            log "backed up $keyboard_config before changing the repeat delay"
+        fi
+        kwriteconfig6 --file kcminputrc --group Keyboard --key RepeatDelay 150
+        log "set the global keyboard repeat delay to 150 ms"
     fi
 }
 

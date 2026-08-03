@@ -975,9 +975,9 @@ impl Dispatch<WlKeyboard, ()> for AppState {
                 // KWin sends rate=0 to an input-method-v1 keyboard grab when
                 // the focused client supports compositor-side repetition.
                 // That repetition cannot reach keys consumed by the IME, so
-                // keep a local fallback for Hangul while preserving KWin's
-                // configured delay. Bypassed Latin keys still repeat in the
-                // focused client as before.
+                // keep a local fallback rate for Hangul while preserving
+                // KWin's configured delay. Bypassed Latin keys use that same
+                // delay in the focused client.
                 state.update_repeat_info(rate, delay, true);
             }
             _ => {}

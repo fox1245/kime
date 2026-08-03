@@ -12,7 +12,7 @@ pub struct RepeatInfo {
 
 pub const DEFAULT_REPEAT_INFO: RepeatInfo = RepeatInfo {
     rate: 20,
-    delay: 400,
+    delay: 150,
 };
 
 impl RepeatInfo {

@@ -53,9 +53,10 @@ The installer must:
 3. Restore `~/.config/kime/config.yaml` and
    `~/.config/environment.d/99-kime.conf`.
 4. Select Kime as KDE's Wayland virtual keyboard when KDE 6 tools exist.
-5. Enable `kime-overwatch-watcher.service`.
-6. Install this skill under the user's Codex skills directory.
-7. Restart Kime through KWin when requested.
+5. Set KDE's global keyboard repeat delay to 150 ms for both Latin and Hangul.
+6. Enable `kime-overwatch-watcher.service`.
+7. Install this skill under the user's Codex skills directory.
+8. Restart Kime through KWin when requested.
 
 Do not launch `kime-wayland` directly under KDE. KWin must launch it with the
 private Wayland input-method socket.
@@ -78,7 +79,8 @@ Ask the user to manually verify these behaviors:
 
 - `Shift+Space` toggles Korean in the normal profile.
 - Right `Alt` toggles Korean while Overwatch is running.
-- Holding a Korean letter repeats without sticking the physical key.
+- Holding either a Latin or Korean letter starts repeating after 150 ms without
+  sticking the physical key.
 - Repeating the same consonant does not create a double consonant unless Shift
   is held.
 
