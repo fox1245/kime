@@ -137,6 +137,16 @@ meson.add_install_script('sh', '-c',
   '_', meson.project_source_root() / 'res' / 'kime-xdg-autostart',
 )
 
+# Install the optional Overwatch profile watcher. It is enabled separately with:
+#   systemctl --user enable --now kime-overwatch-watcher.service
+meson.add_install_script('sh', '-c',
+  'install -Dm755 "$1" "${DESTDIR}${MESON_INSTALL_PREFIX}/bin/kime-overwatch-watcher"',
+  '_', meson.project_source_root() / 'res' / 'kime-overwatch-watcher',
+)
+install_data('res/kime-overwatch-watcher.service',
+  install_dir: get_option('libdir') / 'systemd' / 'user',
+)
+
 # Install icons
 install_data(
   'res/icons/64x64/kime-hangul-black.png',

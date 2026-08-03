@@ -1,7 +1,7 @@
 use kime_engine_config::{HotkeyBehavior, HotkeyResult};
 use kime_engine_core::{
     Config, EngineConfig, Hotkey, InputCategory, InputEngine, InputResult, Key, KeyCode,
-    ModifierState,
+    ModifierState, RuntimeProfile,
 };
 use pretty_assertions::assert_eq;
 
@@ -49,4 +49,46 @@ fn unbound_super_keeps_preedit() {
 
     engine.press_key_code(SUPER_R, ModifierState::empty(), false, &config);
     assert_eq!(engine.preedit_str(), "ㄱ");
+}
+
+#[test]
+fn runtime_profile_switches_hotkeys_without_recreating_engine() {
+    let mut engine_config = EngineConfig::default();
+    engine_config.global_hotkeys = std::iter::once((
+        Key::new(KeyCode::Enter, ModifierState::SHIFT),
+        Hotkey::new(HotkeyBehavior::toggle_hangul_latin(), HotkeyResult::Consume),
+    ))
+    .collect();
+    engine_config.game_global_hotkeys = std::iter::once((
+        Key::normal(KeyCode::AltR),
+        Hotkey::new(HotkeyBehavior::toggle_hangul_latin(), HotkeyResult::Consume),
+    ))
+    .collect();
+
+    let config = Config::new(engine_config);
+    let mut engine = InputEngine::new(&config);
+
+    let shift_enter = Key::new(KeyCode::Enter, ModifierState::SHIFT);
+    let right_alt = Key::normal(KeyCode::AltR);
+
+    assert!(engine
+        .press_key(shift_enter, &config)
+        .contains(InputResult::CONSUMED));
+    assert_eq!(engine.category(), InputCategory::Hangul);
+
+    engine.set_profile(RuntimeProfile::Game);
+    assert_eq!(engine.category(), InputCategory::Latin);
+    assert!(!engine
+        .press_key(shift_enter, &config)
+        .contains(InputResult::LANGUAGE_CHANGED));
+    assert!(engine
+        .press_key(right_alt, &config)
+        .contains(InputResult::LANGUAGE_CHANGED));
+    assert_eq!(engine.category(), InputCategory::Hangul);
+
+    engine.set_profile(RuntimeProfile::Normal);
+    assert!(engine
+        .press_key(shift_enter, &config)
+        .contains(InputResult::LANGUAGE_CHANGED));
+    assert_eq!(engine.category(), InputCategory::Latin);
 }

@@ -15,6 +15,7 @@ xim = { version = "0.5", default-features = false, features = ["x11rb-server"] }
 
 ahash = "0.8"
 log = "0.4"
+signal-hook = "0.3"
 x11rb = { version = "0.13", features = [
     "render",
     "image",

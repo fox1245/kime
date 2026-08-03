@@ -1,0 +1,22 @@
+#!/usr/bin/env sh
+
+set -u
+
+profile=
+
+while :; do
+    if pgrep -f '[O]verwatch\.exe' >/dev/null 2>&1; then
+        wanted=game
+    else
+        wanted=normal
+    fi
+
+    if [ "$wanted" != "$profile" ]; then
+        if /usr/bin/kime --profile "$wanted" >/dev/null 2>&1; then
+            profile=$wanted
+            logger -t kime-overwatch-watcher "switched Kime profile to $wanted"
+        fi
+    fi
+
+    sleep 1
+done

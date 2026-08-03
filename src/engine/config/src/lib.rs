@@ -142,6 +142,7 @@ pub struct EngineConfig {
     pub default_category: InputCategory,
     pub global_category_state: bool,
     pub global_hotkeys: BTreeMap<Key, Hotkey>,
+    pub game_global_hotkeys: BTreeMap<Key, Hotkey>,
     pub category_hotkeys: BTreeMap<InputCategory, BTreeMap<Key, Hotkey>>,
     pub mode_hotkeys: BTreeMap<InputMode, BTreeMap<Key, Hotkey>>,
     pub candidate_font: String,
@@ -168,6 +169,12 @@ impl Default for EngineConfig {
                 Key::normal(KeyCode::Muhenkan) => Hotkey::new(HotkeyBehavior::toggle_hangul_latin(), HotkeyResult::Consume),
                 Key::new(KeyCode::E, ModifierState::CONTROL | ModifierState::ALT) => Hotkey::new(HotkeyBehavior::Mode(InputMode::Emoji), HotkeyResult::ConsumeIfProcessed),
                 Key::new(KeyCode::Backslash, ModifierState::CONTROL | ModifierState::ALT) => Hotkey::new(HotkeyBehavior::Mode(InputMode::Math), HotkeyResult::ConsumeIfProcessed),
+            },
+            game_global_hotkeys: btreemap! {
+                Key::normal(KeyCode::AltR) => Hotkey::new(HotkeyBehavior::toggle_hangul_latin(), HotkeyResult::Consume),
+                // Sometimes Alt_R contains Alt modifier state
+                Key::alt(KeyCode::AltR) => Hotkey::new(HotkeyBehavior::toggle_hangul_latin(), HotkeyResult::Consume),
+                Key::normal(KeyCode::Hangul) => Hotkey::new(HotkeyBehavior::toggle_hangul_latin(), HotkeyResult::Consume),
             },
             category_hotkeys: btreemap! {
                 InputCategory::Hangul => btreemap! {

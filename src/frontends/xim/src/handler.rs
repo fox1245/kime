@@ -1,9 +1,13 @@
 use std::num::NonZeroU32;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 
 use crate::pe_window::PeWindow;
 use ab_glyph::{FontArc, FontVec};
 use ahash::AHashMap;
-use kime_engine_core::{Config, InputEngine, InputResult, Key, KeyCode, ModifierState};
+use kime_engine_core::{
+    Config, InputEngine, InputResult, Key, KeyCode, ModifierState, RuntimeProfile,
+};
 use x11rb::{
     connection::Connection,
     protocol::xproto::{ConfigureNotifyEvent, KeyButMask, KeyPressEvent, KEY_PRESS_EVENT},
@@ -15,15 +19,17 @@ use xim::{
 
 pub struct KimeData {
     engine: InputEngine,
+    profile: Arc<AtomicU8>,
     pe: Option<NonZeroU32>,
     show_preedit_window: bool,
     engine_ready: bool,
 }
 
 impl KimeData {
-    pub fn new(config: &Config, show_preedit_window: bool) -> Self {
+    pub fn new(config: &Config, show_preedit_window: bool, profile: Arc<AtomicU8>) -> Self {
         Self {
             engine: InputEngine::new(config),
+            profile,
             pe: None,
             show_preedit_window,
             engine_ready: true,
@@ -35,11 +41,21 @@ pub struct KimeHandler {
     preedit_windows: AHashMap<NonZeroU32, PeWindow>,
     font: Option<(FontArc, f32)>,
     config: Config,
+    profile: Arc<AtomicU8>,
     screen_num: usize,
 }
 
 impl KimeHandler {
+    #[cfg(test)]
     pub fn new(screen_num: usize, config: Config) -> Self {
+        Self::with_profile(
+            screen_num,
+            config,
+            Arc::new(AtomicU8::new(RuntimeProfile::Normal.as_u8())),
+        )
+    }
+
+    pub fn with_profile(screen_num: usize, config: Config, profile: Arc<AtomicU8>) -> Self {
         let (font_data, index, font_size) = &config.xim_preedit_font;
         // The preedit font can be missing (e.g. neither the configured
         // `xim_preedit_font` nor the fallback is installed), in which case
@@ -61,6 +77,7 @@ impl KimeHandler {
             screen_num,
             font,
             config,
+            profile,
         }
     }
 }
@@ -263,7 +280,11 @@ impl<C: HasConnection> ServerHandler<X11rbServer<C>> for KimeHandler {
             show_preedit_window = false;
         }
 
-        Ok(KimeData::new(&self.config, show_preedit_window))
+        Ok(KimeData::new(
+            &self.config,
+            show_preedit_window,
+            Arc::clone(&self.profile),
+        ))
     }
 
     fn input_styles(&self) -> Self::InputStyleArray {
@@ -363,6 +384,12 @@ impl<C: HasConnection> ServerHandler<X11rbServer<C>> for KimeHandler {
         }
 
         if let Some(keycode) = KeyCode::from_hardware_code(xev.detail as u16, numlock) {
+            user_ic
+                .user_data
+                .engine
+                .sync_profile(RuntimeProfile::from_u8(
+                    user_ic.user_data.profile.load(Ordering::Relaxed),
+                ));
             let ret = user_ic
                 .user_data
                 .engine

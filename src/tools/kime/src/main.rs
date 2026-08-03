@@ -2,8 +2,13 @@ use kime_engine_core::{load_raw_config_from_config_dir, DaemonModule as Module};
 use nix::fcntl::{Flock, FlockArg};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::{daemon, Pid};
+use signal_hook::{
+    consts::signal::{SIGUSR1, SIGUSR2},
+    flag,
+};
 use std::os::unix::io::AsRawFd;
-use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::{fs::File, io::Write, path::Path};
 use std::{
     io,
@@ -18,7 +23,7 @@ const fn process_name(module: Module) -> &'static str {
     }
 }
 
-fn kill_daemon(pid_path: &Path) -> io::Result<()> {
+fn signal_daemon(pid_path: &Path, signal: Signal) -> io::Result<()> {
     let pid_str = std::fs::read_to_string(pid_path)?;
     let pid: i32 = match pid_str.trim().parse() {
         Ok(pid) => pid,
@@ -28,7 +33,7 @@ fn kill_daemon(pid_path: &Path) -> io::Result<()> {
         }
     };
 
-    match kill(Pid::from_raw(pid), Signal::SIGTERM) {
+    match kill(Pid::from_raw(pid), signal) {
         Ok(_) => Ok(()),
         Err(err) => {
             log::error!("kill return: {}", err);
@@ -37,18 +42,74 @@ fn kill_daemon(pid_path: &Path) -> io::Result<()> {
     }
 }
 
+fn requested_profile_signal(args: &[String]) -> Result<Option<Signal>, String> {
+    for (index, arg) in args.iter().enumerate() {
+        let value = if let Some(value) = arg.strip_prefix("--profile=") {
+            Some(value.to_string())
+        } else if arg == "--profile" {
+            Some(
+                args.get(index + 1)
+                    .ok_or_else(|| "--profile requires normal or game".to_string())?
+                    .clone(),
+            )
+        } else {
+            None
+        };
+
+        if let Some(value) = value {
+            return match value.as_str() {
+                "normal" => Ok(Some(Signal::SIGUSR2)),
+                "game" => Ok(Some(Signal::SIGUSR1)),
+                _ => Err(format!("unknown profile {:?}; use normal or game", value)),
+            };
+        }
+    }
+
+    Ok(None)
+}
+
+fn send_profile_to_children(
+    processes: &mut [(&'static str, std::process::Child, bool)],
+    signal: Signal,
+) {
+    for (name, process, exited) in processes {
+        if *exited {
+            continue;
+        }
+
+        if let Err(err) = kill(Pid::from_raw(process.id() as i32), signal) {
+            log::warn!("Can't send {:?} to {}: {}", signal, name, err);
+        }
+    }
+}
+
 fn main() -> Result<(), ()> {
+    let raw_args = std::env::args().collect::<Vec<_>>();
     let mut args = kime_version::cli_boilerplate!(
         Ok(()),
         "-k or --kill: kill daemon then exit",
         "-D or --no-daemon: don't start as daemon",
+        "--profile <normal|game>: switch runtime hotkey profile",
     );
 
     let run_dir = kime_run_dir::get_run_dir();
     let pid = run_dir.join("kime.pid");
 
+    match requested_profile_signal(&raw_args) {
+        Ok(Some(signal)) => {
+            return signal_daemon(&pid, signal).map_err(|err| {
+                log::error!("Can't switch Kime profile: {}", err);
+            });
+        }
+        Ok(None) => {}
+        Err(err) => {
+            log::error!("{}", err);
+            return Err(());
+        }
+    }
+
     if args.contains(["-k", "--kill"]) {
-        return kill_daemon(&pid).map_err(|err| {
+        return signal_daemon(&pid, Signal::SIGTERM).map_err(|err| {
             log::error!("Can't kill daemon: {}", err);
         });
     }
@@ -110,9 +171,14 @@ fn main() -> Result<(), ()> {
 
     static RUN: AtomicBool = AtomicBool::new(true);
 
+    let game_profile = Arc::new(AtomicBool::new(false));
+    let normal_profile = Arc::new(AtomicBool::new(false));
+    flag::register(SIGUSR1, Arc::clone(&game_profile)).expect("Register game profile signal");
+    flag::register(SIGUSR2, Arc::clone(&normal_profile)).expect("Register normal profile signal");
+
     ctrlc::set_handler(|| {
         log::info!("Receive exit signal");
-        RUN.store(false, SeqCst);
+        RUN.store(false, Ordering::SeqCst);
     })
     .expect("Set ctrlc handler");
 
@@ -138,7 +204,14 @@ fn main() -> Result<(), ()> {
         })
         .collect::<Vec<_>>();
 
-    while RUN.load(SeqCst) {
+    while RUN.load(Ordering::SeqCst) {
+        if game_profile.swap(false, Ordering::SeqCst) {
+            send_profile_to_children(&mut processes, Signal::SIGUSR1);
+        }
+        if normal_profile.swap(false, Ordering::SeqCst) {
+            send_profile_to_children(&mut processes, Signal::SIGUSR2);
+        }
+
         // Remove finished process
         for (name, process, exited) in processes.iter_mut() {
             match process.try_wait().expect("Wait process") {

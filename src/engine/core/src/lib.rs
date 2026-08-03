@@ -9,6 +9,26 @@ pub use config::{
 };
 pub use kime_engine_backend::{InputResult, Key, KeyCode, KeyMap, ModifierState};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum RuntimeProfile {
+    Normal = 0,
+    Game = 1,
+}
+
+impl RuntimeProfile {
+    pub const fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::Game,
+            _ => Self::Normal,
+        }
+    }
+
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
+
 use config::{HotkeyBehavior, HotkeyResult};
 use os::{DefaultOsContext, OsContext};
 
@@ -24,6 +44,7 @@ use kime_engine_backend_math::MathMode;
 
 pub struct InputEngine {
     engine_impl: EngineImpl,
+    profile: RuntimeProfile,
     commit_buf: String,
     preedit_buf: String,
     os_ctx: DefaultOsContext,
@@ -39,6 +60,7 @@ impl InputEngine {
     pub fn new(config: &Config) -> Self {
         Self {
             engine_impl: EngineImpl::new(config),
+            profile: RuntimeProfile::Normal,
             commit_buf: String::with_capacity(16),
             preedit_buf: String::with_capacity(16),
             os_ctx: DefaultOsContext::default(),
@@ -50,6 +72,24 @@ impl InputEngine {
         self.engine_impl.clear_preedit(&mut self.commit_buf);
         self.engine_impl.mode = None;
         self.engine_impl.category = category;
+    }
+
+    pub fn set_profile(&mut self, profile: RuntimeProfile) {
+        if self.profile == profile {
+            return;
+        }
+
+        self.reset();
+        self.profile = profile;
+
+        if profile == RuntimeProfile::Game {
+            self.engine_impl.category = InputCategory::Latin;
+            self.engine_impl.mode = None;
+        }
+    }
+
+    pub fn sync_profile(&mut self, profile: RuntimeProfile) {
+        self.set_profile(profile);
     }
 
     pub fn set_input_mode(&mut self, mode: InputMode) -> bool {
@@ -79,12 +119,17 @@ impl InputEngine {
     }
 
     fn try_hotkey<'c>(&self, key: Key, config: &'c Config) -> Option<Hotkey> {
+        let (category_hotkeys, mode_hotkeys) = match self.profile {
+            RuntimeProfile::Normal => (&config.category_hotkeys, &config.mode_hotkeys),
+            RuntimeProfile::Game => (&config.game_category_hotkeys, &config.game_mode_hotkeys),
+        };
+
         if let Some(mode) = self.engine_impl.mode {
-            config.mode_hotkeys[mode]
+            mode_hotkeys[mode]
                 .iter()
                 .find_map(|(k, v)| if *k == key { Some(*v) } else { None })
         } else {
-            config.category_hotkeys[self.engine_impl.category]
+            category_hotkeys[self.engine_impl.category]
                 .iter()
                 .find_map(|(k, v)| if *k == key { Some(*v) } else { None })
         }

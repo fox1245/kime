@@ -1,10 +1,17 @@
 use std::error::Error;
 use std::os::fd::{AsFd, AsRawFd};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use kime_engine_core::{
     load_engine_config_from_config_dir, Config, InputEngine, InputResult, Key, KeyCode,
-    ModifierState,
+    ModifierState, RuntimeProfile,
+};
+
+use signal_hook::{
+    consts::signal::{SIGUSR1, SIGUSR2},
+    low_level,
 };
 
 use mio::{unix::SourceFd, Events as MioEvents, Interest, Poll, Token};
@@ -79,6 +86,7 @@ struct InputMethodV1State {
 pub struct AppState {
     config: Config,
     engine: InputEngine,
+    profile: Arc<AtomicU8>,
     mod_state: ModifierState,
     numlock: bool,
     engine_ready: bool,
@@ -98,10 +106,13 @@ impl AppState {
     pub fn new(_conn: &Connection) -> Self {
         let config = load_engine_config_from_config_dir().unwrap_or_default();
         let timer = TimerFd::new().expect("Initialize timer");
+        let profile = Arc::new(AtomicU8::new(RuntimeProfile::Normal.as_u8()));
+        Self::register_profile_signals(&profile);
 
         Self {
             engine: InputEngine::new(&config),
             config,
+            profile,
             mod_state: ModifierState::empty(),
             numlock: false,
             engine_ready: true,
@@ -126,6 +137,34 @@ impl AppState {
             im_v2: None,
             im_v1: None,
         }
+    }
+
+    fn register_profile_signals(profile: &Arc<AtomicU8>) {
+        let game_profile = Arc::clone(profile);
+        let normal_profile = Arc::clone(profile);
+
+        unsafe {
+            low_level::register(
+                SIGUSR1,
+                Box::new(move || {
+                    game_profile.store(RuntimeProfile::Game.as_u8(), Ordering::Relaxed);
+                }),
+            )
+            .expect("Register game profile signal");
+            low_level::register(
+                SIGUSR2,
+                Box::new(move || {
+                    normal_profile.store(RuntimeProfile::Normal.as_u8(), Ordering::Relaxed);
+                }),
+            )
+            .expect("Register normal profile signal");
+        }
+    }
+
+    fn sync_profile(&mut self) {
+        self.engine.sync_profile(RuntimeProfile::from_u8(
+            self.profile.load(Ordering::Relaxed),
+        ));
     }
 
     pub fn has_input_method_v2(&self) -> bool {
@@ -321,6 +360,7 @@ impl AppState {
             let _time = wayland_time.wrapping_add(elapsed_ms);
 
             // Handle v2
+            self.sync_profile();
             if let Some(ref mut im_state) = self.im_v2 {
                 if im_state.grab_activate {
                     let hwcode = (key + 8) as u16;
@@ -340,6 +380,7 @@ impl AppState {
                 .map(|s| s.grab_activate)
                 .unwrap_or(false);
             if v1_grab_activate {
+                self.sync_profile();
                 let hwcode = (key + 8) as u16;
                 if let Some(code) = KeyCode::from_hardware_code(hwcode, self.numlock) {
                     let ret = self
@@ -641,6 +682,7 @@ impl Dispatch<ZwpInputMethodKeyboardGrabV2, ()> for AppState {
                     .map(|s| s.grab_activate)
                     .unwrap_or(false);
 
+                state.sync_profile();
                 if is_pressed && grab_activate {
                     let hwcode = (key + 8) as u16;
                     if let Some(code) = KeyCode::from_hardware_code(hwcode, state.numlock) {
@@ -862,6 +904,7 @@ impl Dispatch<WlKeyboard, ()> for AppState {
                     .map(|s| s.grab_activate)
                     .unwrap_or(false);
 
+                state.sync_profile();
                 if is_pressed && grab_activate {
                     let hwcode = (key + 8) as u16;
                     if let Some(code) = KeyCode::from_hardware_code(hwcode, state.numlock) {
