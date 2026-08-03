@@ -1,0 +1,27 @@
+# Personal Kime profile used by the Overwatch watcher.
+#
+# Normal desktop profile: Shift+Space
+# Overwatch profile:       Right Alt
+daemon:
+  modules:
+  - Xim
+  - Wayland
+engine:
+  default_category: Latin
+  hangul:
+    addons:
+      all: []
+      dubeolsik:
+      - TreatJongseongAsChoseong
+  global_hotkeys:
+    S-Space:
+      behavior: !Toggle
+      - Hangul
+      - Latin
+      result: Consume
+  game_global_hotkeys:
+    AltR:
+      behavior: !Toggle
+      - Hangul
+      - Latin
+      result: Consume

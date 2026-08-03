@@ -119,6 +119,13 @@ ninja -C build
 sudo ninja -C build install
 ```
 
+### 오버워치 프로필 포크 재설치
+
+이 브랜치의 게임별 단축키, 개인 설정, KDE Wayland 설정을 새 시스템에
+복원하는 방법은 [오버워치용 Kime 포크 재설치](docs/OVERWATCH_SETUP.ko.md)를
+참고하세요. Codex용 복구 스킬도 `skills/restore-overwatch-kime`에 포함되어
+있습니다.
+
 필요한 프론트엔드만 `-Dgtk3=true`, `-Dqt5=true` 등으로 선택 또는 해제 하세요.
 
 #### GTK

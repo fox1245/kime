@@ -1,0 +1,4 @@
+interface:
+  display_name: "Restore Overwatch Kime"
+  short_description: "Rebuild and restore the customized Kime setup"
+  default_prompt: "Use $restore-overwatch-kime to rebuild and restore my customized Kime setup on KDE Wayland."
