@@ -9,7 +9,11 @@ use signal_hook::{
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::{fs::File, io::Write, path::Path};
+use std::{
+    fs::{File, OpenOptions},
+    io::Write,
+    path::Path,
+};
 use std::{
     io,
     process::{Command, Stdio},
@@ -148,10 +152,18 @@ fn main() -> Result<(), ()> {
     //   - File::create fails: permission denied, disk full, etc.
     //   - Flock::lock returns EWOULDBLOCK: another kime instance is running
     //   - Flock::lock returns other error: unexpected lock failure
-    let _pid_lock = match File::create(&pid).and_then(|file| {
-        Flock::lock(file, FlockArg::LockExclusiveNonblock).map_err(|(_, e)| io::Error::from(e))
-    }) {
+    let _pid_lock = match OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&pid)
+        .and_then(|file| {
+            Flock::lock(file, FlockArg::LockExclusiveNonblock).map_err(|(_, e)| io::Error::from(e))
+        }) {
         Ok(mut lock) => {
+            lock.set_len(0).map_err(|err| {
+                log::error!("Can't clear PID file: {}", err);
+            })?;
             writeln!(lock, "{}", std::process::id()).map_err(|err| {
                 log::error!("Can't daemonize kime: {}", err);
             })?;
