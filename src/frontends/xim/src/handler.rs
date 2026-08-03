@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::pe_window::PeWindow;
 use ab_glyph::{FontArc, FontVec};
@@ -11,6 +12,8 @@ use kime_engine_core::{
 use x11rb::{
     connection::Connection,
     protocol::xproto::{ConfigureNotifyEvent, KeyButMask, KeyPressEvent, KEY_PRESS_EVENT},
+    protocol::xtest::ConnectionExt as XTestConnectionExt,
+    CURRENT_TIME,
 };
 use xim::{
     x11rb::{HasConnection, X11rbServer},
@@ -39,11 +42,24 @@ impl KimeData {
 
 pub struct KimeHandler {
     preedit_windows: AHashMap<NonZeroU32, PeWindow>,
+    xim_repeats: AHashMap<u64, XimRepeat>,
     font: Option<(FontArc, f32)>,
     config: Config,
     profile: Arc<AtomicU8>,
     screen_num: usize,
 }
+
+#[derive(Clone, Copy)]
+struct XimRepeat {
+    keycode: u8,
+    event: KeyPressEvent,
+    next: Instant,
+    pending: u32,
+}
+
+const XIM_REPEAT_DELAY: Duration = Duration::from_millis(400);
+const XIM_REPEAT_INTERVAL: Duration = Duration::from_millis(50);
+const SEND_EVENT_FLAG: u8 = 0x80;
 
 impl KimeHandler {
     #[cfg(test)]
@@ -74,6 +90,7 @@ impl KimeHandler {
 
         Self {
             preedit_windows: AHashMap::new(),
+            xim_repeats: AHashMap::new(),
             screen_num,
             font,
             config,
@@ -83,6 +100,126 @@ impl KimeHandler {
 }
 
 impl KimeHandler {
+    fn repeat_id(user_ic: &xim::UserInputContext<KimeData>) -> u64 {
+        (u64::from(user_ic.ic.client_win()) << 16) | u64::from(user_ic.ic.input_context_id().get())
+    }
+
+    fn is_configured_hotkey(&self, key: Key) -> bool {
+        let profile = RuntimeProfile::from_u8(self.profile.load(Ordering::Relaxed));
+        let (category_hotkeys, mode_hotkeys) = match profile {
+            RuntimeProfile::Normal => (&self.config.category_hotkeys, &self.config.mode_hotkeys),
+            RuntimeProfile::Game => (
+                &self.config.game_category_hotkeys,
+                &self.config.game_mode_hotkeys,
+            ),
+        };
+
+        category_hotkeys
+            .iter()
+            .any(|(_, hotkeys)| hotkeys.iter().any(|(candidate, _)| *candidate == key))
+            || mode_hotkeys
+                .iter()
+                .any(|(_, hotkeys)| hotkeys.iter().any(|(candidate, _)| *candidate == key))
+    }
+
+    fn can_repeat(&self, key: Key) -> bool {
+        if matches!(
+            key.code,
+            KeyCode::Shift
+                | KeyCode::ControlL
+                | KeyCode::ControlR
+                | KeyCode::AltL
+                | KeyCode::AltR
+                | KeyCode::SuperL
+                | KeyCode::SuperR
+        ) {
+            return false;
+        }
+
+        !self.is_configured_hotkey(key)
+    }
+
+    fn stop_repeat(&mut self, user_ic: &xim::UserInputContext<KimeData>) {
+        self.xim_repeats.remove(&Self::repeat_id(user_ic));
+    }
+
+    fn start_repeat(&mut self, user_ic: &xim::UserInputContext<KimeData>, xev: KeyPressEvent) {
+        // The event window is the window on which the client originally
+        // received the key. Fall back to the focus/client window for clients
+        // that leave it unset.
+        let target = if xev.event != 0 {
+            xev.event
+        } else {
+            user_ic
+                .ic
+                .app_focus_win()
+                .or_else(|| user_ic.ic.app_win())
+                .map(NonZeroU32::get)
+                .unwrap_or(0)
+        };
+
+        if target == 0 {
+            log::debug!("Cannot start XIM repeat without a target window");
+            return;
+        }
+
+        let mut event = xev;
+        event.event = target;
+        event.response_type = KEY_PRESS_EVENT;
+        self.xim_repeats.insert(
+            Self::repeat_id(user_ic),
+            XimRepeat {
+                keycode: xev.detail,
+                event,
+                next: Instant::now() + XIM_REPEAT_DELAY,
+                pending: 0,
+            },
+        );
+        log::trace!("Start XIM repeat for keycode {}", xev.detail);
+    }
+
+    pub fn repeat_timeout(&self) -> Option<Duration> {
+        let now = Instant::now();
+        self.xim_repeats
+            .values()
+            .map(|repeat| repeat.next.saturating_duration_since(now))
+            .min()
+    }
+
+    pub fn clear_repeats(&mut self) {
+        self.xim_repeats.clear();
+    }
+
+    pub fn emit_repeats<C>(&mut self, conn: &C) -> Result<(), xim::ServerError>
+    where
+        C: Connection + XTestConnectionExt,
+    {
+        let now = Instant::now();
+        for repeat in self.xim_repeats.values_mut() {
+            if repeat.next > now {
+                continue;
+            }
+
+            conn.xtest_fake_input(
+                KEY_PRESS_EVENT,
+                repeat.keycode,
+                CURRENT_TIME,
+                repeat.event.root,
+                repeat.event.root_x,
+                repeat.event.root_y,
+                0,
+            )?;
+            repeat.pending = repeat.pending.saturating_add(1);
+
+            // Do not replay missed ticks after a scheduling hiccup. One
+            // synthetic press per interval is enough and avoids a burst of
+            // buffered characters when the desktop is briefly busy.
+            repeat.next = now + XIM_REPEAT_INTERVAL;
+        }
+
+        Ok(())
+    }
+
     pub fn expose(&mut self, window: u32, conn: &impl Connection) -> Result<(), xim::ServerError> {
         if let Some(win) = NonZeroU32::new(window) {
             if let Some(pe) = self.preedit_windows.get_mut(&win) {
@@ -341,6 +478,7 @@ impl<C: HasConnection> ServerHandler<X11rbServer<C>> for KimeHandler {
         user_ic: &mut xim::UserInputContext<Self::InputContextData>,
     ) -> Result<String, xim::ServerError> {
         log::trace!("reset_ic");
+        self.stop_repeat(user_ic);
         self.reset(server, user_ic).map(|_| String::new())
     }
 
@@ -350,12 +488,42 @@ impl<C: HasConnection> ServerHandler<X11rbServer<C>> for KimeHandler {
         user_ic: &mut xim::UserInputContext<Self::InputContextData>,
         xev: &KeyPressEvent,
     ) -> Result<bool, xim::ServerError> {
-        // skip release
-        if xev.response_type != KEY_PRESS_EVENT {
+        let is_key_press = xev.response_type & !SEND_EVENT_FLAG == KEY_PRESS_EVENT;
+        let repeat_id = Self::repeat_id(user_ic);
+
+        // Releases are deliberately passed back to the client, but they must
+        // also stop our fallback timer. XIM clients send both press and
+        // release events because EVENT_MASK includes both.
+        if !is_key_press {
+            self.xim_repeats.remove(&repeat_id);
             return Ok(false);
         }
 
         log::trace!("{:?}", xev);
+
+        // A real repeated press means this XIM client already implements
+        // auto-repeat correctly. Stop the fallback so the two sources cannot
+        // duplicate characters. A different real key starts a new repeat
+        // candidate for this input context.
+        let mut is_synthetic = false;
+        let native_repeat = match self.xim_repeats.get(&repeat_id).copied() {
+            Some(repeat) if repeat.keycode == xev.detail && repeat.pending > 0 => {
+                if let Some(repeat) = self.xim_repeats.get_mut(&repeat_id) {
+                    repeat.pending -= 1;
+                }
+                is_synthetic = true;
+                false
+            }
+            Some(repeat) if repeat.keycode == xev.detail => {
+                self.xim_repeats.remove(&repeat_id);
+                true
+            }
+            Some(_) => {
+                self.xim_repeats.remove(&repeat_id);
+                false
+            }
+            None => false,
+        };
 
         let mut state = ModifierState::empty();
 
@@ -394,7 +562,17 @@ impl<C: HasConnection> ServerHandler<X11rbServer<C>> for KimeHandler {
                 .user_data
                 .engine
                 .press_key(Key::new(keycode, state), &self.config);
-            self.process_input_result(server, user_ic, ret)
+            let consumed = self.process_input_result(server, user_ic, ret)?;
+
+            if consumed
+                && !is_synthetic
+                && !native_repeat
+                && self.can_repeat(Key::new(keycode, state))
+            {
+                self.start_repeat(user_ic, *xev);
+            }
+
+            Ok(consumed)
         } else {
             log::warn!("Unknown hardware keycode: {}", xev.detail);
             return Ok(false);
@@ -407,6 +585,8 @@ impl<C: HasConnection> ServerHandler<X11rbServer<C>> for KimeHandler {
         user_ic: xim::UserInputContext<Self::InputContextData>,
     ) -> Result<(), xim::ServerError> {
         log::info!("destroy_ic");
+
+        self.xim_repeats.remove(&Self::repeat_id(&user_ic));
 
         if let Some(pe) = user_ic.user_data.pe {
             self.preedit_windows
@@ -441,6 +621,7 @@ impl<C: HasConnection> ServerHandler<X11rbServer<C>> for KimeHandler {
         server: &mut X11rbServer<C>,
         user_ic: &mut xim::UserInputContext<Self::InputContextData>,
     ) -> Result<(), xim::ServerError> {
+        self.stop_repeat(user_ic);
         if user_ic.user_data.engine_ready {
             self.reset(server, user_ic)
         } else {

@@ -1956,6 +1956,7 @@ dependencies = [
  "imageproc",
  "kime-engine-core",
  "kime-version",
+ "libc",
  "log",
  "pico-args",
  "signal-hook",
